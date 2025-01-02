@@ -42,3 +42,6 @@ docker run -p 8000:8000 ai-oncall-copilot
 This project is a reference implementation exploring concepts related to 
 multi-cloud reliability engineering. The author holds USPTO patent 
 applications in this domain (US 19/325,718 and US 19/344,864).
+
+## Health Check
+- Added /ping endpoint for automated health monitoring.
