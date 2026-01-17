@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: ai-oncall-copilot
+    env: docker
+    plan: free
+    region: oregon
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false # Set manually in Render dashboard
+      - key: PORT
+        value: 8000
+    healthCheckPath: /health
