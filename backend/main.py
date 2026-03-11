@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import os
@@ -19,12 +20,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ... (rest of Gemini config and mock data remains same)
-
-# Mount static files AFTER API routes
-if os.path.exists("static"):
-    app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 # Configure Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -124,23 +119,14 @@ async def chat_with_copilot(request: ChatRequest):
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    if not model:
-        return {"response": "I'm currently in offline mode (API key missing). Based on the logs, it looks like there might be a connectivity issue with a downstream service."}
-
-    # Construct prompt with incident context
     context = f"""
     You are an expert On-Call Reliability Engineer Copilot. 
     You are helping troubleshoot the following incident:
     Title: {incident['title']}
     Severity: {incident['severity']}
     Description: {incident['description']}
-    
-    Logs:
-    {chr(10).join(incident['logs'])}
-    
-    Metrics:
-    {incident['metrics']}
-    
+    Logs: {chr(10).join(incident['logs'])}
+    Metrics: {incident['metrics']}
     User Question: {request.message}
     """
     
@@ -150,32 +136,28 @@ async def chat_with_copilot(request: ChatRequest):
         response = model.generate_content(context)
         return {"response": response.text}
     except Exception as e:
-        # Rich Local Simulation Fallback
         service_name = incident['title'].split()[-1]
-        cpu = incident['metrics'].get('cpu', incident['metrics'].get('cpu_usage', 'N/A'))
-        
         briefing = f"### 🛡️ Incident Briefing: {incident['id']}\n"
         briefing += f"The `{incident['title']}` is currently impact status `{incident['status']}`. "
         briefing += f"Symptoms indicate {incident['description']}. Primary metrics show {incident['metrics']}.\n\n"
-        
-        top_checks = "### 🔍 Top Priority Checks\n"
-        top_checks += f"1. **Deployment Audit**: Investigate changes in the last deployment to `{service_name}`.\n"
-        top_checks += "2. **Resource Saturation**: Check for memory leaks or CPU throttling in the container/VM.\n"
-        top_checks += "3. **Downstream Dependencies**: Verify health of connected databases and internal APIs.\n\n"
-        
-        slack_message = "### 💬 Slack Update (Copy-paste)\n"
-        slack_message += f"```\n🚨 *INCIDENT UPDATE: {incident['id']}*\n*Service:* {service_name}\n*Severity:* {incident['severity']}\n*Status:* Investigating\n*Current Analysis:* {incident['description']}\n*Next Steps:* Auditing recent deployments and checking resource metrics.\n```\n\n"
-        
-        postmortem = "### 📝 Post-mortem Draft\n"
-        postmortem += f"**Incident:** {incident['title']}\n"
-        postmortem += f"**Detection Time:** {incident['logs'][0].split()[0]} {incident['logs'][0].split()[1]}\n"
-        postmortem += "**Impact:** Customers experienced increased latency and errors.\n"
-        postmortem += "**Root Cause (Hypothesis):** Recent configuration change or code regression causing resource exhaustion.\n"
-
-        full_simulation = f"**[OFFLINE SIMULATION - API Error: {str(e)[:30]}]**\n\n"
-        full_simulation += briefing + top_checks + slack_message + postmortem
-
+        top_checks = "### 🔍 Top Priority Checks\n1. **Deployment Audit**: Investigate changes in the last deployment to `{service_name}`.\n2. **Resource Saturation**: Check for memory leaks or CPU throttling.\n3. **Downstream Dependencies**: Verify health of connected databases.\n\n"
+        slack_message = "### 💬 Slack Update (Copy-paste)\n```\n🚨 *INCIDENT UPDATE: {incident['id']}*\n*Service:* {service_name}\n*Severity:* {incident['severity']}\n*Status:* Investigating\n```\n\n"
+        postmortem = f"### 📝 Post-mortem Draft\n**Incident:** {incident['title']}\n**Impact:** Customers experienced increased latency and errors.\n"
+        full_simulation = f"**[OFFLINE SIMULATION - API Error: {str(e)[:30]}]**\n\n" + briefing + top_checks + slack_message + postmortem
         return {"response": full_simulation}
+
+# Serve static files for the frontend
+if os.path.exists("static"):
+    app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # If the file exists in static, serve it
+        file_path = os.path.join("static", full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        # Otherwise serve index.html for React routing
+        return FileResponse("static/index.html")
 
 if __name__ == "__main__":
     import uvicorn
