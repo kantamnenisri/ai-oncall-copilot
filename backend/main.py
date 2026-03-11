@@ -91,6 +91,10 @@ class ChatRequest(BaseModel):
 async def health_check():
     return {"status": "ok", "service": "ai-oncall-copilot"}
 
+@app.get("/ping")
+async def ping():
+    return "OK"
+
 @app.get("/incidents", response_model=List[Incident])
 async def get_incidents():
     return mock_incidents
